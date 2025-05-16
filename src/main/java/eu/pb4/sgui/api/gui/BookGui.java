@@ -4,11 +4,11 @@ import eu.pb4.sgui.api.ScreenProperty;
 import eu.pb4.sgui.api.elements.BookElementBuilder;
 import eu.pb4.sgui.virtual.SguiScreenHandlerFactory;
 import eu.pb4.sgui.virtual.book.BookScreenHandler;
-import net.minecraft.item.ItemStack;
-import net.minecraft.registry.tag.ItemTags;
-import net.minecraft.screen.ScreenHandlerType;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.tags.ItemTags;
+import net.minecraft.world.inventory.MenuType;
+import net.minecraft.world.item.ItemStack;
 
 import java.util.OptionalInt;
 
@@ -23,172 +23,174 @@ import java.util.OptionalInt;
  */
 @SuppressWarnings("unused")
 public class BookGui implements GuiInterface {
-    protected final ServerPlayerEntity player;
-    protected ItemStack book;
-    protected int page = 0;
-    @Deprecated(forRemoval = true)
-    protected boolean open = false;
-    protected boolean reOpen = false;
-    protected BookScreenHandler screenHandler = null;
+	protected final ServerPlayer player;
+	protected ItemStack book;
+	protected int page = 0;
+	@Deprecated(forRemoval = true)
+	protected boolean open = false;
+	protected boolean reOpen = false;
+	protected BookScreenHandler screenHandler = null;
 
-    protected int syncId = -1;
+	protected int syncId = -1;
 
-    /**
-     * Constructs a new BookGui for the supplied player, based
-     * on the provided book.
-     *
-     * @param player the player to serve this gui to
-     * @param book   the book stack to display
-     * @throws IllegalArgumentException if the provided item is not a book
-     */
-    public BookGui(ServerPlayerEntity player, ItemStack book) {
-        this.player = player;
+	/**
+	 * Constructs a new BookGui for the supplied player, based
+	 * on the provided book.
+	 *
+	 * @param player the player to serve this gui to
+	 * @param book   the book stack to display
+	 * @throws IllegalArgumentException if the provided item is not a book
+	 */
+	public BookGui(ServerPlayer player, ItemStack book) {
+		this.player = player;
 
-        if (!book.getItem().getRegistryEntry().isIn(ItemTags.LECTERN_BOOKS)) {
-            throw new IllegalArgumentException("Item must be a book");
-        }
-        this.book = book;
-    }
+		if (!book.getItem().getDefaultInstance().is(ItemTags.LECTERN_BOOKS)) {
+			throw new IllegalArgumentException("Item must be a book");
+		}
+		this.book = book;
+	}
 
-    /**
-     * Constructs a new BookGui for the supplied player, based
-     * on the provided book.
-     *
-     * @param player the player to serve this gui to
-     * @param book   the book builder to display
-     */
-    public BookGui(ServerPlayerEntity player, BookElementBuilder book) {
-        this.player = player;
-        this.book = book.asStack();
-    }
+	/**
+	 * Constructs a new BookGui for the supplied player, based
+	 * on the provided book.
+	 *
+	 * @param player the player to serve this gui to
+	 * @param book   the book builder to display
+	 */
+	public BookGui(ServerPlayer player, BookElementBuilder book) {
+		this.player = player;
+		this.book = book.asStack();
+	}
 
-    /**
-     * Sets the selected page number
-     *
-     * @param page the page index, from 0
-     */
-    public void setPage(int page) {
-        this.page = page;
-        this.sendProperty(ScreenProperty.SELECTED, this.page);
-    }
+	/**
+	 * Returns the current selected page
+	 *
+	 * @return the page index, from 0
+	 */
+	public int getPage() {
+		return page;
+	}
 
-    /**
-     * Returns the current selected page
-     *
-     * @return the page index, from 0
-     */
-    public int getPage() {
-        return page;
-    }
+	/**
+	 * Sets the selected page number
+	 *
+	 * @param page the page index, from 0
+	 */
+	public void setPage(int page) {
+		this.page = page;
+		this.sendProperty(ScreenProperty.SELECTED, this.page);
+	}
 
-    /**
-     * Returns the book item used to store the data.
-     *
-     * @return the book stack
-     */
-    public ItemStack getBook() {
-        return this.book;
-    }
+	/**
+	 * Returns the book item used to store the data.
+	 *
+	 * @return the book stack
+	 */
+	public ItemStack getBook() {
+		return this.book;
+	}
 
-    /**
-     * Activates when the 'Take Book' button is pressed
-     */
-    public void onTakeBookButton() {
-    }
+	/**
+	 * Activates when the 'Take Book' button is pressed
+	 */
+	public void onTakeBookButton() {
+	}
 
-    @Override
-    public ScreenHandlerType<?> getType() { return ScreenHandlerType.LECTERN; }
+	@Override
+	public MenuType<?> getType() {
+		return MenuType.LECTERN;
+	}
 
-    @Override
-    public ServerPlayerEntity getPlayer() {
-        return this.player;
-    }
+	@Override
+	public ServerPlayer getPlayer() {
+		return this.player;
+	}
 
-    @Override
-    public int getSyncId() {
-        return this.syncId;
-    }
+	@Override
+	public int getSyncId() {
+		return this.syncId;
+	}
 
-    @Override
-    public boolean isOpen() {
-        return this.screenHandler == this.player.currentScreenHandler;
-    }
+	@Override
+	public boolean isOpen() {
+		return this.screenHandler == this.player.containerMenu;
+	}
 
-    @Override
-    public boolean open() {
-        var state = false;
-        if (!this.player.isDisconnected() && !this.isOpen()) {
-            this.beforeOpen();
-            state = this.setupScreenHandler();
-            this.afterOpen();
-        }
-        return state;
-    }
+	@Override
+	public boolean open() {
+		var state = false;
+		if (!this.player.hasDisconnected() && !this.isOpen()) {
+			this.beforeOpen();
+			state = this.setupScreenHandler();
+			this.afterOpen();
+		}
+		return state;
+	}
 
-    protected boolean setupScreenHandler() {
-        //noinspection removal
-        this.open = true;
-        this.onOpen();
-        this.reOpen = true;
-        OptionalInt temp = this.player.openHandledScreen(new SguiScreenHandlerFactory<>(this, (syncId, inv, player) -> new BookScreenHandler(syncId, this, player)));
-        this.reOpen = false;
-        if (temp.isPresent()) {
-            this.syncId = temp.getAsInt();
-            if (this.player.currentScreenHandler instanceof BookScreenHandler) {
-                this.screenHandler = (BookScreenHandler) this.player.currentScreenHandler;
-                this.sendProperty(ScreenProperty.SELECTED, this.page);
-                return true;
-            }
-        }
-        return false;
-    }
+	protected boolean setupScreenHandler() {
+		//noinspection removal
+		this.open = true;
+		this.onOpen();
+		this.reOpen = true;
+		OptionalInt temp = this.player.openMenu(new SguiScreenHandlerFactory<>(this, (syncId, inv, player) -> new BookScreenHandler(syncId, this, player)));
+		this.reOpen = false;
+		if (temp.isPresent()) {
+			this.syncId = temp.getAsInt();
+			if (this.player.containerMenu instanceof BookScreenHandler) {
+				this.screenHandler = (BookScreenHandler) this.player.containerMenu;
+				this.sendProperty(ScreenProperty.SELECTED, this.page);
+				return true;
+			}
+		}
+		return false;
+	}
 
-    /**
-     * Called when player executes command via {@link net.minecraft.text.ClickEvent.Action#RUN_COMMAND}
-     *
-     * @param command input command
-     * @return Returns false, for continuing execution or true, if you want to cancel it
-     */
-    public boolean onCommand(String command) {
-        return false;
-    }
+	/**
+	 * Called when player executes command via {@link net.minecraft.network.chat.ClickEvent.Action#RUN_COMMAND}
+	 *
+	 * @param command input command
+	 * @return Returns false, for continuing execution or true, if you want to cancel it
+	 */
+	public boolean onCommand(String command) {
+		return false;
+	}
 
-    @Override
-    public void close(boolean screenHandlerIsClosed) {
-        if (this.isOpen() && !this.reOpen) {
-            //noinspection removal
-            this.open = this.isOpen();
-            this.reOpen = false;
+	@Override
+	public void close(boolean screenHandlerIsClosed) {
+		if (this.isOpen() && !this.reOpen) {
+			//noinspection removal
+			this.open = this.isOpen();
+			this.reOpen = false;
 
-            if (!screenHandlerIsClosed && this.player.currentScreenHandler == this.screenHandler) {
-                this.player.closeHandledScreen();
-            }
+			if (!screenHandlerIsClosed && this.player.containerMenu == this.screenHandler) {
+				this.player.closeContainer();
+			}
 
-            this.onClose();
-        } else {
-            this.reOpen = false;
-        }
-    }
+			this.onClose();
+		} else {
+			this.reOpen = false;
+		}
+	}
 
-    @Deprecated
-    @Override
-    public void setTitle(Text title) {
-    }
+	@Deprecated
+	@Override
+	public Component getTitle() {
+		return null;
+	}
 
-    @Deprecated
-    @Override
-    public Text getTitle() {
-        return null;
-    }
+	@Deprecated
+	@Override
+	public void setTitle(Component title) {
+	}
 
-    @Deprecated
-    @Override
-    public boolean getAutoUpdate() {
-        return false;
-    }
+	@Deprecated
+	@Override
+	public boolean getAutoUpdate() {
+		return false;
+	}
 
-    @Deprecated
-    @Override
-    public void setAutoUpdate(boolean value) {
-    }
+	@Deprecated
+	@Override
+	public void setAutoUpdate(boolean value) {
+	}
 }

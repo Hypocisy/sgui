@@ -1,53 +1,53 @@
 package eu.pb4.sgui.virtual.book;
 
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.inventory.Inventory;
-import net.minecraft.item.ItemStack;
-import net.minecraft.screen.slot.Slot;
+import net.minecraft.world.Container;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.ItemStack;
 
 public class BookSlot extends Slot {
-    public BookSlot(Inventory inventory, int index, int x, int y) {
-        super(inventory, index, x, y);
-    }
+	public BookSlot(Container inventory, int index, int x, int y) {
+		super(inventory, index, x, y);
+	}
 
-    @Override
-    public ItemStack takeStack(int amount) {
-        return ItemStack.EMPTY;
-    }
+	@Override
+	public ItemStack remove(int amount) {
+		return ItemStack.EMPTY;
+	}
 
-    @Override
-    public boolean canTakeItems(PlayerEntity playerEntity) {
-        return false;
-    }
+	@Override
+	public boolean mayPickup(Player playerEntity) {
+		return false;
+	}
 
-    @Override
-    public boolean hasStack() {
-        return true;
-    }
+	@Override
+	public boolean hasItem() {
+		return true;
+	}
 
-    @Override
-    public boolean canInsert(ItemStack stack) {
-        return false;
-    }
+	@Override
+	public boolean mayPlace(ItemStack stack) {
+		return false;
+	}
 
-    @Override
-    protected void onTake(int amount) {
-    }
+	@Override
+	protected void onSwapCraft(int amount) {
+	}
 
-    @Override
-    protected void onCrafted(ItemStack stack) {
-    }
+	@Override
+	protected void checkTakeAchievements(ItemStack stack) {
+	}
 
-    @Override
-    public ItemStack getStack() {
-        return this.inventory.getStack(0);
-    }
+	@Override
+	public ItemStack getItem() {
+		return this.container.getItem(0);
+	}
 
-    @Override
-    public void setStack(ItemStack stack) {
-    }
+	@Override
+	public void set(ItemStack stack) {
+	}
 
-    @Override
-    public void markDirty() {
-    }
+	@Override
+	public void setChanged() {
+	}
 }

@@ -2,161 +2,161 @@ package eu.pb4.sgui.virtual.merchant;
 
 import eu.pb4.sgui.api.gui.MerchantGui;
 import eu.pb4.sgui.virtual.inventory.VirtualScreenHandler;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.inventory.Inventory;
-import net.minecraft.item.ItemStack;
-import net.minecraft.screen.ScreenHandlerType;
-import net.minecraft.screen.slot.Slot;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.village.MerchantInventory;
-import net.minecraft.village.TradedItem;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.Container;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.MenuType;
+import net.minecraft.world.inventory.MerchantContainer;
+import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.trading.ItemCost;
 
 public class VirtualMerchantScreenHandler extends VirtualScreenHandler {
 
-    private final VirtualMerchant merchant;
-    private final MerchantInventory merchantInventory;
+	private final VirtualMerchant merchant;
+	private final MerchantContainer merchantInventory;
 
-    public VirtualMerchantScreenHandler(int syncId, ServerPlayerEntity player, VirtualMerchant merchant, MerchantGui gui, MerchantInventory merchantInventory) {
-        super(ScreenHandlerType.MERCHANT, syncId, gui, player);
-        this.merchant = merchant;
-        this.merchantInventory = merchantInventory;
-    }
+	public VirtualMerchantScreenHandler(int syncId, ServerPlayer player, VirtualMerchant merchant, MerchantGui gui, MerchantContainer merchantInventory) {
+		super(MenuType.MERCHANT, syncId, gui, player);
+		this.merchant = merchant;
+		this.merchantInventory = merchantInventory;
+	}
 
-    @Override
-    public void onContentChanged(Inventory inventory) {
-        try {
-            this.merchantInventory.updateOffers();
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-        super.onContentChanged(inventory);
-    }
+	@Override
+	public void slotsChanged(Container inventory) {
+		try {
+			this.merchantInventory.updateSellItem();
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		super.slotsChanged(inventory);
+	}
 
-    @Override
-    public boolean canInsertIntoSlot(ItemStack stack, Slot slot) {
-        return false;
-    }
+	@Override
+	public boolean canTakeItemForPickAll(ItemStack stack, Slot slot) {
+		return false;
+	}
 
-    @Override
-    public ItemStack quickMove(PlayerEntity player, int index) {
-        ItemStack newCursorStack = ItemStack.EMPTY;
-        Slot slot = this.slots.get(index);
-        if (slot.hasStack()) {
-            ItemStack clickedStack = slot.getStack();
-            newCursorStack = clickedStack.copy();
-            if (index == 2) {
-                if (!this.insertItem(clickedStack, 3, 39, true)) {
-                    return ItemStack.EMPTY;
-                }
+	@Override
+	public ItemStack quickMoveStack(Player player, int index) {
+		ItemStack newCursorStack = ItemStack.EMPTY;
+		Slot slot = this.slots.get(index);
+		if (slot.hasItem()) {
+			ItemStack clickedStack = slot.getItem();
+			newCursorStack = clickedStack.copy();
+			if (index == 2) {
+				if (!this.moveItemStackTo(clickedStack, 3, 39, true)) {
+					return ItemStack.EMPTY;
+				}
 
-                slot.onQuickTransfer(clickedStack, newCursorStack);
-            } else if (index != 0 && index != 1) {
-                if (index >= 3 && index < 30) {
-                    if (!this.insertItem(clickedStack, 30, 39, false)) {
-                        return ItemStack.EMPTY;
-                    }
-                } else if (index >= 30 && index < 39 && !this.insertItem(clickedStack, 3, 30, false)) {
-                    return ItemStack.EMPTY;
-                }
-            } else if (!this.insertItem(clickedStack, 3, 39, false)) {
-                return ItemStack.EMPTY;
-            }
+				slot.onQuickCraft(clickedStack, newCursorStack);
+			} else if (index != 0 && index != 1) {
+				if (index >= 3 && index < 30) {
+					if (!this.moveItemStackTo(clickedStack, 30, 39, false)) {
+						return ItemStack.EMPTY;
+					}
+				} else if (index >= 30 && index < 39 && !this.moveItemStackTo(clickedStack, 3, 30, false)) {
+					return ItemStack.EMPTY;
+				}
+			} else if (!this.moveItemStackTo(clickedStack, 3, 39, false)) {
+				return ItemStack.EMPTY;
+			}
 
-            if (clickedStack.isEmpty()) {
-                slot.setStack(ItemStack.EMPTY);
-            } else {
-                slot.markDirty();
-            }
+			if (clickedStack.isEmpty()) {
+				slot.set(ItemStack.EMPTY);
+			} else {
+				slot.setChanged();
+			}
 
-            if (clickedStack.getCount() == newCursorStack.getCount()) {
-                return ItemStack.EMPTY;
-            }
+			if (clickedStack.getCount() == newCursorStack.getCount()) {
+				return ItemStack.EMPTY;
+			}
 
-            slot.onTakeItem(player, clickedStack);
-        }
+			slot.onTake(player, clickedStack);
+		}
 
-        return newCursorStack;
-    }
+		return newCursorStack;
+	}
 
-    @Override
-    public void onClosed(PlayerEntity playerEntity) {
-        super.onClosed(playerEntity);
-        this.merchant.setCustomer(null);
-        if (!playerEntity.getWorld().isClient) {
-            if (!playerEntity.isAlive() || playerEntity instanceof ServerPlayerEntity && ((ServerPlayerEntity)playerEntity).isDisconnected()) {
-                ItemStack itemStack = this.merchantInventory.removeStack(0);
-                if (!itemStack.isEmpty()) {
-                    playerEntity.dropItem(itemStack, false);
-                }
+	@Override
+	public void removed(Player playerEntity) {
+		super.removed(playerEntity);
+		this.merchant.setTradingPlayer(null);
+		if (!playerEntity.level().isClientSide()) {
+			if (!playerEntity.isAlive() || playerEntity instanceof ServerPlayer serverPlayer && serverPlayer.hasDisconnected()) {
+				ItemStack itemStack = this.merchantInventory.removeItemNoUpdate(0);
+				if (!itemStack.isEmpty()) {
+					playerEntity.drop(itemStack, false);
+				}
 
-                itemStack = this.merchantInventory.removeStack(1);
-                if (!itemStack.isEmpty()) {
-                    playerEntity.dropItem(itemStack, false);
-                }
-            } else if (playerEntity instanceof ServerPlayerEntity) {
-                playerEntity.getInventory().offerOrDrop(this.merchantInventory.removeStack(0));
-                playerEntity.getInventory().offerOrDrop(this.merchantInventory.removeStack(1));
-            }
+				itemStack = this.merchantInventory.removeItemNoUpdate(1);
+				if (!itemStack.isEmpty()) {
+					playerEntity.drop(itemStack, false);
+				}
+			} else if (playerEntity instanceof ServerPlayer) {
+				playerEntity.getInventory().placeItemBackInInventory(this.merchantInventory.removeItemNoUpdate(0));
+				playerEntity.getInventory().placeItemBackInInventory(this.merchantInventory.removeItemNoUpdate(1));
+			}
 
-        }
-    }
+		}
+	}
 
-    public void selectNewTrade(int tradeIndex) {
-        this.merchantInventory.setOfferIndex(tradeIndex);
-        this.getGui().onSelectTrade(this.merchant.getOffers().get(tradeIndex));
+	public void selectNewTrade(int tradeIndex) {
+		this.merchantInventory.setSelectionHint(tradeIndex);
+		this.getGui().onSelectTrade(this.merchant.getOffers().get(tradeIndex));
 
-        if (this.merchant.getOffers().size() > tradeIndex) {
-            ItemStack itemStack = this.merchantInventory.getStack(0);
-            if (!itemStack.isEmpty()) {
-                if (!this.insertItem(itemStack, 3, 39, true)) {
-                    return;
-                }
+		if (this.merchant.getOffers().size() > tradeIndex) {
+			ItemStack itemStack = this.merchantInventory.getItem(0);
+			if (!itemStack.isEmpty()) {
+				if (!this.moveItemStackTo(itemStack, 3, 39, true)) {
+					return;
+				}
 
-                this.merchantInventory.setStack(0, itemStack);
-            }
+				this.merchantInventory.setItem(0, itemStack);
+			}
 
-            ItemStack itemStack2 = this.merchantInventory.getStack(1);
-            if (!itemStack2.isEmpty()) {
-                if (!this.insertItem(itemStack2, 3, 39, true)) {
-                    return;
-                }
+			ItemStack itemStack2 = this.merchantInventory.getItem(1);
+			if (!itemStack2.isEmpty()) {
+				if (!this.moveItemStackTo(itemStack2, 3, 39, true)) {
+					return;
+				}
 
-                this.merchantInventory.setStack(1, itemStack2);
-            }
+				this.merchantInventory.setItem(1, itemStack2);
+			}
 
-            if (this.merchantInventory.getStack(0).isEmpty() && this.merchantInventory.getStack(1).isEmpty()) {
-                ItemStack itemStack3 = this.merchant.getOffers().get(tradeIndex).getDisplayedFirstBuyItem();
-                this.autofill(0, itemStack3);
-                ItemStack itemStack4 = this.merchant.getOffers().get(tradeIndex).getSecondBuyItem().map(TradedItem::itemStack).orElse(ItemStack.EMPTY);
-                this.autofill(1, itemStack4);
-            }
+			if (this.merchantInventory.getItem(0).isEmpty() && this.merchantInventory.getItem(1).isEmpty()) {
+				ItemStack itemStack3 = this.merchant.getOffers().get(tradeIndex).getCostA();
+				this.autofill(0, itemStack3);
+				ItemStack itemStack4 = this.merchant.getOffers().get(tradeIndex).getItemCostB().map(ItemCost::itemStack).orElse(ItemStack.EMPTY);
+				this.autofill(1, itemStack4);
+			}
 
-        }
-    }
+		}
+	}
 
-    private void autofill(int slot, ItemStack stack) {
-        if (!stack.isEmpty()) {
-            for(int i = 3; i < 39; ++i) {
-                ItemStack itemStack = this.slots.get(i).getStack();
-                if (!itemStack.isEmpty() && ItemStack.areItemsAndComponentsEqual(stack, itemStack)) {
-                    ItemStack itemStack2 = this.merchantInventory.getStack(slot);
-                    int j = itemStack2.isEmpty() ? 0 : itemStack2.getCount();
-                    int k = Math.min(stack.getMaxCount() - j, itemStack.getCount());
-                    ItemStack itemStack3 = itemStack.copy();
-                    int l = j + k;
-                    itemStack.decrement(k);
-                    itemStack3.setCount(l);
-                    this.merchantInventory.setStack(slot, itemStack3);
-                    if (l >= stack.getMaxCount()) {
-                        break;
-                    }
-                }
-            }
-        }
-    }
+	private void autofill(int slot, ItemStack stack) {
+		if (!stack.isEmpty()) {
+			for (int i = 3; i < 39; ++i) {
+				ItemStack itemStack = this.slots.get(i).getItem();
+				if (!itemStack.isEmpty() && ItemStack.isSameItemSameComponents(stack, itemStack)) {
+					ItemStack itemStack2 = this.merchantInventory.getItem(slot);
+					int j = itemStack2.isEmpty() ? 0 : itemStack2.getCount();
+					int k = Math.min(stack.getMaxStackSize() - j, itemStack.getCount());
+					ItemStack itemStack3 = itemStack.copy();
+					int l = j + k;
+					itemStack.shrink(k);
+					itemStack3.setCount(l);
+					this.merchantInventory.setItem(slot, itemStack3);
+					if (l >= stack.getMaxStackSize()) {
+						break;
+					}
+				}
+			}
+		}
+	}
 
-    @Override
-    public MerchantGui getGui() {
-        return (MerchantGui) super.getGui();
-    }
+	@Override
+	public MerchantGui getGui() {
+		return (MerchantGui) super.getGui();
+	}
 }

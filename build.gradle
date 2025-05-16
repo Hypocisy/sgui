@@ -1,14 +1,15 @@
 plugins {
-	id 'fabric-loom' version '1.6.+'
+	id 'java-library'
+	id 'eclipse'
+	id 'idea'
 	id 'maven-publish'
+	id 'net.neoforged.moddev' version '2.0.78'
 }
 
-sourceCompatibility = JavaVersion.VERSION_21
-targetCompatibility = JavaVersion.VERSION_21
 
 archivesBaseName = project.archives_base_name
 version = project.mod_version
-group = project.maven_group
+group = project.mod_group_id
 
 repositories {
 	// Add repositories to retrieve artifacts from in here.
@@ -18,55 +19,127 @@ repositories {
 	// for more information about repositories.
 
 	maven { url "https://jitpack.io" }
-}
-
-sourceSets {
-	testmod {
-		runtimeClasspath += main.runtimeClasspath
-		compileClasspath += main.compileClasspath
+	maven {
+		name = "NeoForged"
+		url = "https://maven.neoforged.net/releases"
 	}
 }
 
-loom {
+neoForge {
+	// Specify the version of NeoForge to use.
+	version = project.neo_version
+
+	parchment {
+		mappingsVersion = project.parchment_mappings_version
+		minecraftVersion = project.parchment_minecraft_version
+	}
+
+	// This line is optional. Access Transformers are automatically detected
+	accessTransformers = project.files('src/main/resources/META-INF/accesstransformer.cfg')
+
+	// Default run configurations.
+	// These can be tweaked, removed, or duplicated as needed.
 	runs {
-		testmodClient {
+		client {
 			client()
-			ideConfigGenerated project.rootProject == project
-			name = "Test Mod Client"
-			source sourceSets.testmod
+
+			// Comma-separated list of namespaces to load gametests from. Empty = all namespaces.
+			systemProperty 'neoforge.enabledGameTestNamespaces', mod_id
 		}
-		testmodServer {
+
+		server {
 			server()
-			ideConfigGenerated project.rootProject == project
-			name = "Test Mod Server"
-			source sourceSets.testmod
+			programArgument '--nogui'
+			systemProperty 'neoforge.enabledGameTestNamespaces', mod_id
+		}
+
+		// This run config launches GameTestServer and runs all registered gametests, then exits.
+		// By default, the server will crash when no gametests are provided.
+		// The gametest system is also enabled by default for other run configs under the /test command.
+		gameTestServer {
+			type = "gameTestServer"
+			systemProperty 'neoforge.enabledGameTestNamespaces', mod_id
+		}
+
+		data {
+			data()
+
+			// example of overriding the workingDirectory set in configureEach above, uncomment if you want to use it
+			// gameDirectory = project.file('run-data')
+
+			// Specify the modid for data generation, where to output the resulting resource, and where to look for existing resources.
+			programArguments.addAll '--mod', project.mod_id, '--all', '--output', file('src/generated/resources/').getAbsolutePath(), '--existing', file('src/main/resources/').getAbsolutePath()
+		}
+
+		// applies to all the run configs above
+		configureEach {
+			// Recommended logging data for a userdev environment
+			// The markers can be added/remove as needed separated by commas.
+			// "SCAN": For mods scan.
+			// "REGISTRIES": For firing of registry events.
+			// "REGISTRYDUMP": For getting the contents of all registries.
+			systemProperty 'forge.logging.markers', 'REGISTRIES'
+
+			// Recommended logging level for the console
+			// You can set various levels here.
+			// Please read: https://stackoverflow.com/questions/2031163/when-to-use-the-different-log-levels
+			logLevel = org.slf4j.event.Level.DEBUG
 		}
 	}
+
+	mods {
+		// define mod <-> source bindings
+		// these are used to tell the game which sources are for which mod
+		// mostly optional in a single mod project
+		// but multi mod projects should define one per mod
+		"${mod_id}" {
+			sourceSet(sourceSets.main)
+		}
+//		// 添加testmod定义
+//		"${mod_id}_testmod" {  // 使用testmod的实际modid
+//			sourceSet sourceSets.
+//		}
+	}
 }
+
 
 dependencies {
-	// To change the versions see the gradle.properties file
-	minecraft "com.mojang:minecraft:${project.minecraft_version}"
-	mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
-	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
-
-	// Fabric API. This is technically optional, but you probably want it anyway.
-	modCompileOnly modLocalRuntime("net.fabricmc.fabric-api:fabric-api:${project.fabric_version}")
-
 	//modRuntime "com.github.SuperCoder7979:databreaker:0.2.6"
 
 	// PSA: Some older mods, compiled on Loom 0.2.1, might have outdated Maven POMs.
 	// You may need to force-disable transitiveness on them.
-	testmodImplementation sourceSets.main.output
+//	implementation project(':testmod')
 }
 
-processResources {
-	inputs.property "version", project.version
-
-	filesMatching("fabric.mod.json") {
-		expand "version": project.version
-	}
+// This block of code expands all declared replace properties in the specified resource targets.
+// A missing property will result in an error. Properties are expanded using ${} Groovy notation.
+var generateModMetadata = tasks.register("generateModMetadata", ProcessResources) {
+	var replaceProperties = [
+			minecraft_version      : minecraft_version,
+			minecraft_version_range: minecraft_version_range,
+			neo_version            : neo_version,
+			neo_version_range      : neo_version_range,
+			loader_version_range   : loader_version_range,
+			mod_id                 : mod_id,
+			mod_name               : mod_name,
+			mod_license            : mod_license,
+			mod_version            : mod_version,
+			mod_authors            : mod_authors,
+			mod_description        : mod_description
+	]
+	inputs.properties replaceProperties
+	expand replaceProperties
+	from "src/main/templates"
+	into "build/generated/sources/modMetadata"
 }
+
+
+
+
+
+sourceSets.main.resources.srcDir generateModMetadata
+// To avoid having to run "generateModMetadata" manually, make it run on every project reload
+neoForge.ideSyncTask generateModMetadata
 
 tasks.withType(JavaCompile).configureEach {
 	// ensure that the encoding is set to UTF-8, no matter what the system default is
@@ -76,7 +149,7 @@ tasks.withType(JavaCompile).configureEach {
 	it.options.encoding = "UTF-8"
 
 
-	it.options.release = 17
+	it.options.release = 21
 
 }
 
@@ -96,37 +169,49 @@ jar {
 def env = System.getenv()
 
 // configure the maven publication
+//publishing {
+//	publications {
+//		mavenJava(MavenPublication) {
+//			// add all the jars that should be included when publishing to maven
+//			artifact(remapJar) {
+//				builtBy remapJar
+//			}
+//			artifact(sourcesJar) {
+//				builtBy remapSourcesJar
+//			}
+//		}
+//	}
+//
+//	// See https://docs.gradle.org/current/userguide/publishing_maven.html for information on how to set up publishing.
+//	repositories {
+//		// Add repositories to publish to here.
+//		// Notice: This block does NOT have the same function as the block in the top level.
+//		// The repositories here will be used for publishing your artifact, not for
+//		// retrieving dependencies.
+//		repositories {
+//			if (env.MAVEN_URL) {
+//				maven {
+//					credentials {
+//						username env.MAVEN_USERNAME
+//						password env.MAVEN_PASSWORD
+//					}
+//					url env.MAVEN_URL
+//				}
+//			} else {
+//				mavenLocal()
+//			}
+//		}
+//	}
+//}
 publishing {
 	publications {
-		mavenJava(MavenPublication) {
-			// add all the jars that should be included when publishing to maven
-			artifact(remapJar) {
-				builtBy remapJar
-			}
-			artifact(sourcesJar) {
-				builtBy remapSourcesJar
-			}
+		register('mavenJava', MavenPublication) {
+			from components.java
 		}
 	}
-
-	// See https://docs.gradle.org/current/userguide/publishing_maven.html for information on how to set up publishing.
 	repositories {
-		// Add repositories to publish to here.
-		// Notice: This block does NOT have the same function as the block in the top level.
-		// The repositories here will be used for publishing your artifact, not for
-		// retrieving dependencies.
-		repositories {
-			if (env.MAVEN_URL) {
-				maven {
-					credentials {
-						username env.MAVEN_USERNAME
-						password env.MAVEN_PASSWORD
-					}
-					url env.MAVEN_URL
-				}
-			} else {
-				mavenLocal()
-			}
+		maven {
+			url "file://${project.projectDir}/repo"
 		}
 	}
 }

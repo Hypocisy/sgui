@@ -1,51 +1,51 @@
 package eu.pb4.sgui.virtual.merchant;
 
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
-import net.minecraft.village.SimpleMerchant;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.npc.ClientSideMerchant;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 
-public class VirtualMerchant extends SimpleMerchant {
+public class VirtualMerchant extends ClientSideMerchant {
 
-    private boolean isLeveled = false;
-    private int level = 1;
+	private boolean isLeveled = false;
+	private int level = 1;
 
-    public VirtualMerchant(PlayerEntity playerEntity) {
-        super(playerEntity);
-    }
+	public VirtualMerchant(Player playerEntity) {
+		super(playerEntity);
+	}
 
-    public void setLeveled(boolean leveled) {
-        this.isLeveled = leveled;
-    }
+	public void setLeveled(boolean leveled) {
+		this.isLeveled = leveled;
+	}
 
-    public void setLevel(int level) {
-        this.level = level;
-    }
+	public int getLevel() {
+		return this.level;
+	}
 
-    public int getLevel() {
-        return this.level;
-    }
+	public void setLevel(int level) {
+		this.level = level;
+	}
 
-    @Override
-    public void onSellingItem(ItemStack stack) {
-        ServerPlayerEntity player = (ServerPlayerEntity) this.getCustomer();
-        assert player != null;
-        if (player.currentScreenHandler instanceof VirtualMerchantScreenHandler current) {
-            current.getGui().getSelectedTrade();
-        }
-        super.onSellingItem(stack);
-    }
+	@Override
+	public void notifyTradeUpdated(ItemStack stack) {
+		ServerPlayer player = (ServerPlayer) this.getTradingPlayer();
+		assert player != null;
+		if (player.containerMenu instanceof VirtualMerchantScreenHandler current) {
+			current.getGui().getSelectedTrade();
+		}
+		super.notifyTradeUpdated(stack);
+	}
 
-    @Override
-    public boolean isLeveledMerchant() {
-        return isLeveled;
-    }
+	@Override
+	public boolean showProgressBar() {
+		return isLeveled;
+	}
 
-    @Override
-    public void sendOffers(PlayerEntity player, Text test, int levelProgress) {
-        if (player.currentScreenHandler instanceof VirtualMerchantScreenHandler) {
-            ((VirtualMerchantScreenHandler) player.currentScreenHandler).getGui().sendUpdate();
-        }
-    }
+	@Override
+	public void openTradingScreen(Player player, Component displayName, int level) {
+		if (player.containerMenu instanceof VirtualMerchantScreenHandler) {
+			((VirtualMerchantScreenHandler) player.containerMenu).getGui().sendUpdate();
+		}
+	}
 }

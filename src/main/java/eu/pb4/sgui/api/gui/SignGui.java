@@ -2,20 +2,19 @@ package eu.pb4.sgui.api.gui;
 
 import eu.pb4.sgui.virtual.FakeScreenHandler;
 import eu.pb4.sgui.virtual.sign.VirtualSignBlockEntity;
-import net.minecraft.block.AbstractSignBlock;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
-import net.minecraft.block.entity.SignBlockEntity;
-import net.minecraft.network.packet.s2c.play.BlockUpdateS2CPacket;
-import net.minecraft.network.packet.s2c.play.CloseScreenS2CPacket;
-import net.minecraft.network.packet.s2c.play.SignEditorOpenS2CPacket;
-import net.minecraft.registry.tag.BlockTags;
-import net.minecraft.screen.ScreenHandlerType;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.text.Text;
-import net.minecraft.util.DyeColor;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket;
+import net.minecraft.network.protocol.game.ClientboundContainerClosePacket;
+import net.minecraft.network.protocol.game.ClientboundOpenSignEditorPacket;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.tags.BlockTags;
+import net.minecraft.world.inventory.MenuType;
+import net.minecraft.world.item.DyeColor;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.SignBlock;
+import net.minecraft.world.level.block.state.BlockState;
 import org.jetbrains.annotations.ApiStatus;
 
 import java.util.ArrayList;
@@ -24,7 +23,7 @@ import java.util.List;
 /**
  * Sign Gui Implementation
  * <p>
- * The Vanilla sign GUI does not use a {@link net.minecraft.screen.ScreenHandler} and thus
+ * The Vanilla sign GUI does not use a {@link net.minecraft.world.inventory.AbstractContainerMenu} and thus
  * it gets its data directly from a block in the world. Due to this, before opening the
  * screen the server must send a fake 'ghost' sign block to the player which contains the data
  * we want the sign to show. We send the block at the players location at max world height
@@ -39,191 +38,191 @@ import java.util.List;
  */
 public class SignGui implements GuiInterface {
 
-    protected final VirtualSignBlockEntity signEntity;
-    protected BlockState type = Blocks.OAK_SIGN.getDefaultState();
-    protected boolean autoUpdate = true;
+	protected final VirtualSignBlockEntity signEntity;
+	protected final ServerPlayer player;
+	private final Component[] texts = new Component[4];
+	protected BlockState type = Blocks.OAK_SIGN.defaultBlockState();
+	protected boolean autoUpdate = true;
+	protected List<Integer> sendLineUpdate = new ArrayList<>(4);
+	protected boolean open = false;
+	protected boolean reOpen = false;
+	protected FakeScreenHandler screenHandler;
 
-    protected List<Integer> sendLineUpdate = new ArrayList<>(4);
-    protected final ServerPlayerEntity player;
-    protected boolean open = false;
-    protected boolean reOpen = false;
-    protected FakeScreenHandler screenHandler;
-    private final Text[] texts = new Text[4];
+	/**
+	 * Constructs a new SignGui for the provided player
+	 *
+	 * @param player the player to serve this gui to
+	 */
+	public SignGui(ServerPlayer player) {
+		this.player = player;
+		this.signEntity = new VirtualSignBlockEntity(player.level(), new BlockPos(player.getBlockX(), Math.min(player.level().getHeight() - 1, player.blockPosition().getY() + 5), player.blockPosition().getZ()), Blocks.OAK_SIGN.defaultBlockState());
+	}
 
-    /**
-     * Constructs a new SignGui for the provided player
-     *
-     * @param player the player to serve this gui to
-     */
-    public SignGui(ServerPlayerEntity player)  {
-        this.player = player;
-        this.signEntity = new VirtualSignBlockEntity(player.getWorld(), new BlockPos(player.getBlockPos().getX(), Math.min(player.getWorld().getTopY() - 1, player.getBlockPos().getY() + 5), player.getBlockPos().getZ()), Blocks.OAK_SIGN.getDefaultState());
-    }
+	/**
+	 * Sets a line of {@link Component} on the sign.
+	 *
+	 * @param line the line index, from 0
+	 * @param text the Text for the line, note that all formatting is stripped when the player closes the sign
+	 */
+	public void setLine(int line, Component text) {
+		this.signEntity.updateText(signText -> signText.setMessage(line, text), true);
+		this.sendLineUpdate.add(line);
+		this.texts[line] = text;
 
-    /**
-     * Sets a line of {@link Text} on the sign.
-     *
-     * @param line the line index, from 0
-     * @param text the Text for the line, note that all formatting is stripped when the player closes the sign
-     */
-    public void setLine(int line, Text text) {
-        this.signEntity.changeText(signText -> signText.withMessage(line, text), true);
-        this.sendLineUpdate.add(line);
-        this.texts[line] = text;
+		if (this.open & this.autoUpdate) {
+			this.updateSign();
+		}
+	}
 
-        if (this.open & this.autoUpdate) {
-            this.updateSign();
-        }
-    }
+	/**
+	 * Returns the {@link Component} from a line on the sign.
+	 *
+	 * @param line the line number
+	 * @return the text on the line
+	 */
+	public Component getLine(int line) {
+		return this.texts[line];
+	}
 
-    /**
-     * Returns the {@link Text} from a line on the sign.
-     *
-     * @param line the line number
-     * @return the text on the line
-     */
-    public Text getLine(int line) {
-        return this.texts[line];
-    }
+	/**
+	 * Sets default color for the sign text.
+	 *
+	 * @param color the default sign color
+	 */
+	public void setColor(DyeColor color) {
+		this.signEntity.updateText(signText -> signText.setColor(color), true);
 
-    /**
-     * Sets default color for the sign text.
-     *
-     * @param color the default sign color
-     */
-    public void setColor(DyeColor color) {
-        this.signEntity.changeText(signText -> signText.withColor(color), true);
+		if (this.open && this.autoUpdate) {
+			this.updateSign();
+		}
+	}
 
-        if (this.open && this.autoUpdate) {
-            this.updateSign();
-        }
-    }
+	/**
+	 * Sets the block model used for the sign background.
+	 *
+	 * @param type a block in the {@link BlockTags#SIGNS} tag
+	 */
+	public void setSignType(Block type) {
+		if (!(type instanceof SignBlock)) {
+			throw new IllegalArgumentException("The type must be a sign");
+		}
 
-    /**
-     * Sets the block model used for the sign background.
-     *
-     * @param type a block in the {@link BlockTags#SIGNS} tag
-     */
-    public void setSignType(Block type) {
-        if (!(type instanceof AbstractSignBlock)) {
-            throw new IllegalArgumentException("The type must be a sign");
-        }
+		this.type = type.defaultBlockState();
 
-        this.type = type.getDefaultState();
+		if (this.open && this.autoUpdate) {
+			this.updateSign();
+		}
+	}
 
-        if (this.open && this.autoUpdate) {
-            this.updateSign();
-        }
-    }
+	/**
+	 * Sends sign updates to the player. <br>
+	 * This requires closing and reopening the gui, causing a flicker.
+	 */
+	public void updateSign() {
+		if (this.player.containerMenu == this.screenHandler) {
+			this.reOpen = true;
+			this.player.connection.send(new ClientboundContainerClosePacket(this.screenHandler.containerId));
+		} else {
+			this.open();
+		}
+	}
 
-    /**
-     * Sends sign updates to the player. <br>
-     * This requires closing and reopening the gui, causing a flicker.
-     */
-    public void updateSign() {
-        if (this.player.currentScreenHandler == this.screenHandler) {
-            this.reOpen = true;
-            this.player.networkHandler.sendPacket(new CloseScreenS2CPacket(this.screenHandler.syncId));
-        } else {
-            this.open();
-        }
-    }
+	@Override
+	public ServerPlayer getPlayer() {
+		return this.player;
+	}
 
-    @Override
-    public ServerPlayerEntity getPlayer() {
-        return this.player;
-    }
-    @Override
-    public boolean isOpen() {
-        return this.open;
-    }
+	@Override
+	public boolean isOpen() {
+		return this.open;
+	}
 
-    @Override
-    public boolean open() {
-        this.reOpen = true;
+	@Override
+	public boolean open() {
+		this.reOpen = true;
 
-        if (this.player.currentScreenHandler != this.player.playerScreenHandler && this.player.currentScreenHandler != this.screenHandler) {
-            this.player.closeHandledScreen();
-        }
-        if (screenHandler == null) {
-            this.screenHandler = new FakeScreenHandler(this);
-        }
-        this.player.currentScreenHandler = this.screenHandler;
+		if (this.player.containerMenu != this.player.inventoryMenu && this.player.containerMenu != this.screenHandler) {
+			this.player.closeContainer();
+		}
+		if (screenHandler == null) {
+			this.screenHandler = new FakeScreenHandler(this);
+		}
+		this.player.containerMenu = this.screenHandler;
 
-        this.player.networkHandler.sendPacket(new BlockUpdateS2CPacket(this.signEntity.getPos(), this.type));
-        this.player.networkHandler.sendPacket(this.signEntity.toUpdatePacket());
-        this.player.networkHandler.sendPacket(new SignEditorOpenS2CPacket(this.signEntity.getPos(), true));
+		this.player.connection.send(new ClientboundBlockUpdatePacket(this.signEntity.getBlockPos(), this.type));
+		this.player.connection.send(this.signEntity.getUpdatePacket());
+		this.player.connection.send(new ClientboundOpenSignEditorPacket(this.signEntity.getBlockPos(), true));
 
-        this.reOpen = false;
-        this.open = true;
+		this.reOpen = false;
+		this.open = true;
 
-        return true;
-    }
+		return true;
+	}
 
-    @Override
-    public void close(boolean alreadyClosed) {
-        if (this.open && !this.reOpen) {
-            this.open = false;
-            this.reOpen = false;
+	@Override
+	public void close(boolean alreadyClosed) {
+		if (this.open && !this.reOpen) {
+			this.open = false;
+			this.reOpen = false;
 
-            this.player.networkHandler.sendPacket(new BlockUpdateS2CPacket(player.getServerWorld(), signEntity.getPos()));
+			this.player.connection.send(new ClientboundBlockUpdatePacket(player.level(), signEntity.getBlockPos()));
 
-            if (alreadyClosed && this.player.currentScreenHandler == this.screenHandler) {
-                this.player.onHandledScreenClosed();
-            } else {
-                this.player.closeHandledScreen();
-            }
+			if (alreadyClosed && this.player.containerMenu == this.screenHandler) {
+				this.player.doCloseContainer();
+			} else {
+				this.player.closeContainer();
+			}
 
-            this.onClose();
-        } else {
-            this.reOpen = false;
-            this.open();
-        }
-    }
+			this.onClose();
+		} else {
+			this.reOpen = false;
+			this.open();
+		}
+	}
 
-    @Override
-    public boolean getAutoUpdate() {
-        return this.autoUpdate;
-    }
+	@Override
+	public boolean getAutoUpdate() {
+		return this.autoUpdate;
+	}
 
-    @Override
-    public void setAutoUpdate(boolean value) {
-        this.autoUpdate = value;
-    }
+	@Override
+	public void setAutoUpdate(boolean value) {
+		this.autoUpdate = value;
+	}
 
-    /**
-     * Used internally to receive input from the client
-     */
-    @ApiStatus.Internal
-    public void setLineInternal(int line, Text text) {
-        if (this.reOpen && this.sendLineUpdate.contains(line)) {
-            this.sendLineUpdate.remove((Integer) line);
-        } else {
-            this.signEntity.getFrontText().withMessage(line, text);
-            this.texts[line] = text;
-        }
-    }
+	/**
+	 * Used internally to receive input from the client
+	 */
+	@ApiStatus.Internal
+	public void setLineInternal(int line, Component text) {
+		if (this.reOpen && this.sendLineUpdate.contains(line)) {
+			this.sendLineUpdate.remove((Integer) line);
+		} else {
+			this.signEntity.getFrontText().setMessage(line, text);
+			this.texts[line] = text;
+		}
+	}
 
-    @Deprecated
-    @Override
-    public void setTitle(Text title) {
-    }
+	@Deprecated
+	@Override
+	public Component getTitle() {
+		return null;
+	}
 
-    @Deprecated
-    @Override
-    public Text getTitle() {
-        return null;
-    }
+	@Deprecated
+	@Override
+	public void setTitle(Component title) {
+	}
 
-    @Deprecated
-    @Override
-    public ScreenHandlerType<?> getType() {
-        return null;
-    }
+	@Deprecated
+	@Override
+	public MenuType<?> getType() {
+		return null;
+	}
 
-    @Deprecated
-    @Override
-    public int getSyncId() {
-        return -1;
-    }
+	@Deprecated
+	@Override
+	public int getSyncId() {
+		return -1;
+	}
 }

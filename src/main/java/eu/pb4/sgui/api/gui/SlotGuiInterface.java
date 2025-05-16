@@ -5,12 +5,12 @@ import eu.pb4.sgui.api.SlotHolder;
 import eu.pb4.sgui.api.elements.GuiElementInterface;
 import eu.pb4.sgui.virtual.inventory.VirtualScreenHandler;
 import eu.pb4.sgui.virtual.inventory.VirtualSlot;
-import net.minecraft.item.ItemStack;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.screen.slot.Slot;
-import net.minecraft.screen.slot.SlotActionType;
-import org.jetbrains.annotations.ApiStatus;
-import org.jetbrains.annotations.Nullable;
+
+import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.ItemStack;
+import org.apache.logging.log4j.util.InternalApi;
+
+import javax.annotation.Nullable;
 
 public interface SlotGuiInterface extends SlotHolder, GuiInterface {
 
@@ -28,11 +28,11 @@ public interface SlotGuiInterface extends SlotHolder, GuiInterface {
     /**
      * Used internally to receive clicks from the client.
      *
-     * @see SlotGuiInterface#onClick(int, ClickType, SlotActionType, GuiElementInterface)
-     * @see SlotGuiInterface#onAnyClick(int, ClickType, SlotActionType)
+     * @see SlotGuiInterface#onClick(int, ClickType, net.minecraft.world.inventory.ClickType, GuiElementInterface)
+     * @see SlotGuiInterface#onAnyClick(int, ClickType, net.minecraft.world.inventory.ClickType)
      */
-    @ApiStatus.Internal
-    default boolean click(int index, ClickType type, SlotActionType action) {
+    @InternalApi
+    default boolean click(int index, ClickType type, net.minecraft.world.inventory.ClickType action) {
         GuiElementInterface element = this.getSlot(index);
         if (element != null) {
             element.getGuiCallback().click(index, type, action, this);
@@ -48,7 +48,7 @@ public interface SlotGuiInterface extends SlotHolder, GuiInterface {
      * @param action Minecraft's Slot Action Type
      * @return <code>true</code> if to allow manipulation of redirected slots, otherwise <code>false</code>
      */
-    default boolean onAnyClick(int index, ClickType type, SlotActionType action) {
+    default boolean onAnyClick(int index, ClickType type, net.minecraft.world.inventory.ClickType action) {
         return true;
     }
 
@@ -61,7 +61,7 @@ public interface SlotGuiInterface extends SlotHolder, GuiInterface {
      * @param element Clicked GuiElement
      * @return Returns false, for automatic handling and syncing or true, if you want to do it manually
      */
-    default boolean onClick(int index, ClickType type, SlotActionType action, GuiElementInterface element) {
+    default boolean onClick(int index, ClickType type, net.minecraft.world.inventory.ClickType action, GuiElementInterface element) {
         return false;
     }
 
@@ -92,7 +92,7 @@ public interface SlotGuiInterface extends SlotHolder, GuiInterface {
             return this.getSlotRedirect(index);
         }
 
-        if (this.getPlayer().currentScreenHandler instanceof VirtualScreenHandler virt && virt.getGui() == this && index < virt.slots.size()) {
+        if (this.getPlayer().containerMenu instanceof VirtualScreenHandler virt && virt.getGui() == this && index < virt.slots.size()) {
             return virt.slots.get(index);
         }
         return null;
@@ -101,8 +101,8 @@ public interface SlotGuiInterface extends SlotHolder, GuiInterface {
     default ItemStack quickMove(int index) {
         ItemStack itemStack = ItemStack.EMPTY;
         Slot slot = this.getSlotRedirectOrPlayer(index);
-        if (slot != null && slot.hasStack() && !(slot instanceof VirtualSlot)) {
-            ItemStack itemStack2 = slot.getStack();
+        if (slot != null && slot.hasItem() && !(slot instanceof VirtualSlot)) {
+            ItemStack itemStack2 = slot.getItem();
             itemStack = itemStack2.copy();
             if (index < this.getVirtualSize()) {
                 if (!this.insertItem(itemStack2, this.getVirtualSize(), this.getVirtualSize() + 9 * 4, true)) {
@@ -112,12 +112,12 @@ public interface SlotGuiInterface extends SlotHolder, GuiInterface {
                 return ItemStack.EMPTY;
             }
             if (itemStack2.isEmpty()) {
-                slot.setStack(ItemStack.EMPTY);
+                slot.set(ItemStack.EMPTY);
             } else {
-                slot.markDirty();
+                slot.setChanged();
             }
         } else if (slot instanceof VirtualSlot) {
-            return slot.getStack();
+            return slot.getItem();
         }
 
         return itemStack;
@@ -143,19 +143,19 @@ public interface SlotGuiInterface extends SlotHolder, GuiInterface {
                 }
 
                 slot = this.getSlotRedirectOrPlayer(i);
-                if (slot != null && slot.canInsert(stack)) {
-                    itemStack = slot.getStack();
-                    if (!itemStack.isEmpty() && ItemStack.areItemsAndComponentsEqual(stack, itemStack)) {
+                if (slot != null && slot.mayPlace(stack)) {
+                    itemStack = slot.getItem();
+                    if (!itemStack.isEmpty() && ItemStack.isSameItemSameComponents(stack, itemStack)) {
                         int j = itemStack.getCount() + stack.getCount();
-                        if (j <= stack.getMaxCount()) {
+                        if (j <= stack.getMaxStackSize()) {
                             stack.setCount(0);
                             itemStack.setCount(j);
-                            slot.markDirty();
+                            slot.setChanged();
                             bl = true;
-                        } else if (itemStack.getCount() < stack.getMaxCount()) {
-                            stack.decrement(stack.getMaxCount() - itemStack.getCount());
-                            itemStack.setCount(stack.getMaxCount());
-                            slot.markDirty();
+                        } else if (itemStack.getCount() < stack.getMaxStackSize()) {
+                            stack.shrink(stack.getMaxStackSize() - itemStack.getCount());
+                            itemStack.setCount(stack.getMaxStackSize());
+                            slot.setChanged();
                             bl = true;
                         }
                     }
@@ -187,15 +187,15 @@ public interface SlotGuiInterface extends SlotHolder, GuiInterface {
 
                 slot = this.getSlotRedirectOrPlayer(i);
                 if (slot != null) {
-                    itemStack = slot.getStack();
-                    if (itemStack.isEmpty() && slot.canInsert(stack)) {
-                        if (stack.getCount() > slot.getMaxItemCount()) {
-                            slot.setStack(stack.split(slot.getMaxItemCount()));
+                    itemStack = slot.getItem();
+                    if (itemStack.isEmpty() && slot.mayPlace(stack)) {
+                        if (stack.getCount() > slot.getMaxStackSize()) {
+                            slot.set(stack.split(slot.getMaxStackSize()));
                         } else {
-                            slot.setStack(stack.split(stack.getCount()));
+                            slot.set(stack.split(stack.getCount()));
                         }
 
-                        slot.markDirty();
+                        slot.setChanged();
                         bl = true;
                         break;
                     }
